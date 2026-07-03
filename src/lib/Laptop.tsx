@@ -1,8 +1,11 @@
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { Suspense, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { Html } from "@react-three/drei";
+import { useFrame } from "@react-three/fiber";
+import { Decal, Html, useTexture } from "@react-three/drei";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { Brush, Evaluator, SUBTRACTION } from "three-bvh-csg";
+import { laptopEmbedDepth, resolveScreenSrc } from "./embed";
+import type { LaptopSticker } from "./types";
 
 /**
  * PROCEDURAL MACBOOK — code-built, no model files.
@@ -19,8 +22,9 @@ import { Brush, Evaluator, SUBTRACTION } from "three-bvh-csg";
  *  - camera notch top-center, hanging into the screen
  *  - huge trackpad
  *
- * Contract (same as the terminal): `Macbook({ screenTexture, screenUrl? })`,
- * machine sits on y=0, ~0.5 units wide, centered.
+ * Public contract: `<Laptop color? stickers? screenUrl? urlBar? />` —
+ * machine sits on y=0, ~0.5 units wide, centered. Must live inside an R3F
+ * <Canvas>; `<LaptopCanvas>` provides the batteries-included stage.
  * Scale: 1 world unit ≈ 608mm (Air is 304mm wide → 0.50).
  */
 
@@ -277,20 +281,181 @@ function buildNoiseTexture() {
   return tex;
 }
 
-export function Macbook({
-  screenTexture,
-  screenUrl,
-}: {
-  screenTexture: THREE.Texture;
-  screenUrl?: string;
-}) {
+// ---------------- wallpaper (fallback screen) ----------------
+// slow-drifting abstract wallpaper — ribbons of teal/ice light on deep ink,
+// in the family of Apple's press-shot swirl
+function drawWallpaper(ctx: CanvasRenderingContext2D, t: number) {
+  const w = ctx.canvas.width;
+  const h = ctx.canvas.height;
+
+  const bg = ctx.createLinearGradient(0, 0, w, h);
+  bg.addColorStop(0, "#07090d");
+  bg.addColorStop(0.55, "#0a1218");
+  bg.addColorStop(1, "#0b161d");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, w, h);
+
+  const colors = [
+    "rgba(45, 155, 165, 0.34)",
+    "rgba(110, 190, 210, 0.26)",
+    "rgba(210, 230, 238, 0.20)",
+    "rgba(30, 110, 130, 0.30)",
+    "rgba(160, 215, 225, 0.16)",
+  ];
+  ctx.globalCompositeOperation = "lighter";
+  for (let i = 0; i < colors.length; i++) {
+    const ph = t * 0.12 + i * 1.7;
+    const y0 = h * (0.2 + 0.13 * i) + Math.sin(ph) * 40;
+    ctx.strokeStyle = colors[i];
+    ctx.lineWidth = 70 + 28 * Math.sin(ph * 0.7 + i);
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-120, y0 + Math.sin(ph * 1.3) * 60);
+    ctx.bezierCurveTo(
+      w * 0.3, y0 - 180 + Math.cos(ph) * 70,
+      w * 0.62, y0 + 190 + Math.sin(ph * 0.8) * 80,
+      w + 120, y0 - 60 + Math.cos(ph * 1.1) * 50
+    );
+    ctx.stroke();
+  }
+  ctx.globalCompositeOperation = "source-over";
+
+  // subtle vignette so the panel reads as glass, not a sticker
+  const vg = ctx.createRadialGradient(w / 2, h / 2, h * 0.35, w / 2, h / 2, h);
+  vg.addColorStop(0, "rgba(0,0,0,0)");
+  vg.addColorStop(1, "rgba(0,0,0,0.4)");
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, w, h);
+}
+
+function useWallpaperTexture(live: boolean) {
+  const { ctx, tex } = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1024;
+    canvas.height = 666;
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8;
+    return { ctx: canvas.getContext("2d")!, tex };
+  }, []);
+  const clock = useRef(0);
+  useFrame((_, dt) => {
+    if (live) return; // wallpaper hidden behind the iframe — skip the 2D work
+    clock.current += dt;
+    drawWallpaper(ctx, clock.current);
+    tex.needsUpdate = true;
+  });
+  return tex;
+}
+
+// ---------------- stickers ----------------
+// a Decal projected onto the lid's outer (+Y local) face; lives as a child of
+// the lid shell mesh. Position is mesh-local: the shell is centered at
+// z = LID_L/2, so a sticker's hinge-relative y maps to z = y − LID_L/2.
+function StickerDecal({ sticker }: { sticker: LaptopSticker }) {
+  const raw = useTexture(sticker.image);
+  // chirality can't come from the decal's euler (projection is line-symmetric,
+  // so any yaw ≡ an in-plane spin) — mirror the pixels themselves
+  const tex = useMemo(() => {
+    const img = raw.image as HTMLImageElement | HTMLCanvasElement;
+    const c = document.createElement("canvas");
+    c.width = img.width;
+    c.height = img.height;
+    const g = c.getContext("2d")!;
+    g.translate(img.width, 0);
+    g.scale(-1, 1);
+    g.drawImage(img, 0, 0);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 8;
+    return t;
+  }, [raw]);
+  const s = sticker.scale ?? 0.06;
+  const aspect =
+    tex.image && tex.image.width ? tex.image.height / tex.image.width : 1;
+  return (
+    <Decal
+      position={[sticker.x, LID_T / 2, sticker.y - LID_L / 2]}
+      // π yaw projects from the far side, which mirrors the art so it reads
+      // correctly from outside the lid (a texture-matrix flip is ignored here)
+      rotation={[-Math.PI / 2, Math.PI, Math.PI + (sticker.rotation ?? 0)]}
+      scale={[s, s * aspect, 0.01]}
+    >
+      <meshStandardMaterial
+        map={tex}
+        transparent
+        polygonOffset
+        polygonOffsetFactor={-4}
+        roughness={0.6}
+        metalness={0}
+        // printed-vinyl lift — the lid back sits in the scene's shadow side
+        emissiveMap={tex}
+        emissive="#ffffff"
+        emissiveIntensity={0.32}
+      />
+    </Decal>
+  );
+}
+
+/**
+ * lid frame, exported for the editor: stickers live on the plane
+ * y = LID_T/2 of a group at (0, HINGE_Y, HINGE_Z) rotated LID_ANGLE about X,
+ * spanning x ∈ ±LID_W/2, z ∈ 0..LID_L (z here = the sticker's `y`).
+ */
+export const LID_FRAME = {
+  hingeY: HINGE_Y,
+  hingeZ: HINGE_Z,
+  angle: LID_ANGLE,
+  width: LID_W,
+  length: LID_L,
+  thickness: LID_T,
+};
+
+// in-screen browser bar height, in iframe CSS px (the screen is WEB_W wide)
+const BAR_H = 46;
+
+export type LaptopProps = {
+  /** base aluminum color; all alu shades derive from it. Default silver */
+  color?: string;
+  /** stickers on the lid's outer face */
+  stickers?: LaptopSticker[];
+  /** URL on the screen, "self" for the embedding page, null for wallpaper */
+  screenUrl?: string | null;
+  /** browser-style URL bar inside the screen (depth 0 only). Default true */
+  urlBar?: boolean;
+};
+
+export function Laptop({
+  color = "#c8ccd2",
+  stickers = [],
+  screenUrl = "self",
+  urlBar = true,
+}: LaptopProps) {
   const keys = useMemo(computeKeys, []);
   const legendTex = useMemo(() => buildLegendTexture(keys), [keys]);
   const noiseTex = useMemo(buildNoiseTexture, []);
 
+  // recursion: depth 0 = normal page, 1 = inside a laptop screen (live, no
+  // bar), 2+ = static wallpaper, terminating the laptop-in-laptop nesting
+  const depth = useMemo(laptopEmbedDepth, []);
+  const live = screenUrl != null && depth < 2;
+  const showBar = live && urlBar && depth === 0;
+  const [currentUrl, setCurrentUrl] = useState<string | null>(null);
+  const src = useMemo(
+    () => (live ? resolveScreenSrc(currentUrl ?? screenUrl!, depth) : null),
+    [live, currentUrl, screenUrl, depth]
+  );
+  const [barInput, setBarInput] = useState<string | null>(null);
+
+  const screenTexture = useWallpaperTexture(live);
+
   const mats = useMemo(() => {
+    // every aluminum shade derives from the base color so a pink or black
+    // machine keeps the shading relationships (scoop darker than deck, etc.)
+    const base = new THREE.Color(color);
+    const shade = (k: number) => base.clone().multiplyScalar(k);
     const alu = new THREE.MeshStandardMaterial({
-      color: "#c8ccd2",
+      color: base,
       roughness: 0.42,
       metalness: 0.85,
       roughnessMap: noiseTex,
@@ -299,19 +464,19 @@ export function Macbook({
       envMapIntensity: 1.1,
     });
     const aluLid = alu.clone();
-    aluLid.color = new THREE.Color("#c4c8ce");
+    aluLid.color = shade(0.98);
     const aluScoop = alu.clone();
-    aluScoop.color = new THREE.Color("#6d7177");
+    aluScoop.color = shade(0.545);
     aluScoop.roughness = 0.85;
     aluScoop.envMapIntensity = 0.15;
     const trackpad = new THREE.MeshStandardMaterial({
-      color: "#c8ccd2",
+      color: base,
       roughness: 0.32,
       metalness: 0.8,
       envMapIntensity: 1.05,
     });
     const tpLine = new THREE.MeshStandardMaterial({
-      color: "#71757c",
+      color: shade(0.565),
       roughness: 0.5,
       metalness: 0.6,
     });
@@ -342,7 +507,7 @@ export function Macbook({
       metalness: 0,
     });
     return { alu, aluLid, aluScoop, trackpad, tpLine, key, well, glass, dark, foot };
-  }, [noiseTex]);
+  }, [noiseTex, color]);
 
   const geoms = useMemo(
     () => ({
@@ -466,14 +631,20 @@ export function Macbook({
 
       {/* ---------------- lid ---------------- */}
       <group position={[0, HINGE_Y, HINGE_Z]} rotation={[LID_ANGLE, 0, 0]}>
-        {/* lid shell */}
+        {/* lid shell — stickers project onto its outer (+Y local) face */}
         <mesh
           position={[0, 0, LID_L / 2]}
           geometry={geoms.lid}
           material={mats.aluLid}
           castShadow
           receiveShadow
-        />
+        >
+          <Suspense fallback={null}>
+            {stickers.map((s, i) => (
+              <StickerDecal key={`${s.image.slice(0, 32)}-${i}`} sticker={s} />
+            ))}
+          </Suspense>
+        </mesh>
 
         {/* edge-to-edge glass on the inner face */}
         <mesh
@@ -483,7 +654,7 @@ export function Macbook({
         />
 
         {/* the screen itself */}
-        {screenUrl ? (
+        {live && src ? (
           <>
             {/* dead glass behind the live page */}
             <mesh position={[0, -(LID_T / 2 + 0.0018), SCREEN_CZ]} rotation={[Math.PI / 2, 0, 0]}>
@@ -499,18 +670,88 @@ export function Macbook({
               scale={SCREEN_W / WEB_W}
               zIndexRange={[5, 0]}
             >
-              <iframe
-                src={screenUrl}
-                width={WEB_W}
-                height={WEB_H}
+              <div
                 style={{
-                  border: "0",
-                  background: "#0e1114",
-                  display: "block",
+                  width: WEB_W,
+                  height: WEB_H,
+                  display: "flex",
+                  flexDirection: "column",
                   borderRadius: "18px", // the panel's rounded corners
+                  overflow: "hidden",
+                  background: "#0e1114",
                 }}
-                title="macbook screen"
-              />
+              >
+                {showBar && (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const v = (barInput ?? "").trim();
+                      if (v) setCurrentUrl(v);
+                    }}
+                    style={{
+                      height: BAR_H,
+                      flex: "none",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "0 12px",
+                      background: "#16191d",
+                      borderBottom: "1px solid #000",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 9, height: 9, borderRadius: "50%",
+                        background: "#3a3f45", flex: "none",
+                      }}
+                    />
+                    <input
+                      value={barInput ?? src}
+                      onChange={(e) => setBarInput(e.target.value)}
+                      onFocus={(e) => e.target.select()}
+                      spellCheck={false}
+                      style={{
+                        flex: 1,
+                        height: 28,
+                        border: "1px solid #23272c",
+                        borderRadius: 14,
+                        background: "#0c0e11",
+                        color: "#aeb6bf",
+                        padding: "0 12px",
+                        font: "13px/1 -apple-system, 'Helvetica Neue', sans-serif",
+                        outline: "none",
+                      }}
+                    />
+                    <button
+                      type="submit"
+                      style={{
+                        height: 28,
+                        border: 0,
+                        borderRadius: 14,
+                        padding: "0 12px",
+                        background: "#23272c",
+                        color: "#c6cdd5",
+                        font: "12px/1 -apple-system, 'Helvetica Neue', sans-serif",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Go
+                    </button>
+                  </form>
+                )}
+                <iframe
+                  src={src}
+                  width={WEB_W}
+                  height={showBar ? WEB_H - BAR_H : WEB_H}
+                  style={{
+                    border: "0",
+                    background: "#0e1114",
+                    display: "block",
+                    flex: 1,
+                  }}
+                  title="laptop screen"
+                />
+              </div>
             </Html>
           </>
         ) : (

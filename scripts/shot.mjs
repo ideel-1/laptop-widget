@@ -6,7 +6,7 @@ const browser = await chromium.launch({ args: ['--ignore-gpu-blocklist', '--enab
 const page = await browser.newPage({ viewport: { width: 1500, height: 900 }, deviceScaleFactor: 2 });
 page.on('pageerror', (e) => console.log('[pageerror]', e.message));
 await page.goto(url, { waitUntil: 'networkidle' });
-await page.waitForTimeout(3000);
+await page.waitForTimeout(Number(process.argv[4]) || 3000);
 await page.screenshot({ path: out });
 await browser.close();
 console.log('saved', out);
