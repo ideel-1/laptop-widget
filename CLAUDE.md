@@ -23,11 +23,14 @@ Provenance: paradigm ported from `~/Documents/Kova/Websites/operator-terminal-3d
   dimension (useless for thin slabs). `slabGeometry()` handles the rotate/translate
   (shape Y mirrors to −Z; front edge = shape y = −d/2).
 - **The front divot is a CSG subtraction** (`three-bvh-csg@0.0.17` — 0.0.18 needs
-  three>=0.179): a rounded box whose rounded edge barely bites the top-front lip of
-  the SINGLE base slab. Radu-rejected alternatives: full-height shape notch (bends
-  the silhouette into a wave), two stacked slabs (reads as two horizontal planes).
-  The cut faces are material group 1 — shade them darker/rougher (`aluScoop`) or the
-  concavity catches the key light and reads as a convex chrome pill.
+  three>=0.179): a rounded box tilted 45° so one FLAT face chamfers the top-front
+  lip of the SINGLE base slab (reach along deck and front face = SCOOP_BITE·√2
+  each — it must hug the edge, never shelve toward the trackpad). Radu-rejected
+  alternatives: full-height shape notch (bends the silhouette into a wave), two
+  stacked slabs (reads as two horizontal planes), axis-aligned cutter whose flat
+  bottom shelves deep into the deck. The cut faces are material group 1 — shade
+  them MUCH darker/rougher (`aluScoop`) or the up-tilted facet catches the key
+  light + env and reads as a bright convex pill glued onto the edge.
 - **Key legends**: InstancedMesh shares UVs → legends are ONE canvas texture on a
   transparent plane floating 0.0003 above the caps, positions computed from the same
   `computeKeys()` data as the instances.

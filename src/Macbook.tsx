@@ -41,11 +41,11 @@ const FOOT_H = 0.0012;
 const HINGE_Z = -BASE_D / 2 - 0.002;
 const HINGE_Y = FOOT_H + BASE_H * 0.45;
 
-// front thumb divot — a rounded box CSG-subtracted from the top-front edge of
-// the ONE base slab (the base is a single plane; only its lip is nicked)
-const SCOOP_W = 0.028; // divot length along the edge
-const SCOOP_R = 0.005; // rounding of the cutter = curvature of the divot
-const SCOOP_BITE = 0.0015; // how deep the rounded edge sinks in, diagonally
+// front thumb divot — a 45°-tilted rounded box CSG-subtracted from the
+// top-front edge of the ONE base slab: a shallow chamfer hugging the lip
+const SCOOP_W = 0.056; // divot length along the edge
+const SCOOP_R = 0.005; // end rounding of the cutter = rounded divot ends
+const SCOOP_BITE = 0.0016; // perpendicular penetration of the chamfer face
 
 // screen — hairline black border: 4mm-ish top/sides, slightly larger chin
 const GLASS_W = 0.488;
@@ -58,7 +58,7 @@ const NOTCH_W = 0.052;
 const NOTCH_D = 0.0078;
 
 // keyboard
-const U = 0.0295; // key pitch
+const U = 0.0315; // key pitch
 const GAP = 0.004;
 const FN_U = 0.58; // function-row depth in U
 const KEY_H = 0.0028;
@@ -71,7 +71,7 @@ const KB_CENTER_Z = KB_BACK_Z + FIELD_D / 2;
 // trackpad
 const TP_W = 0.212;
 const TP_D = 0.135;
-const TP_Z = 0.0795;
+const TP_Z = 0.0865;
 
 // live-webpage screen: iframe CSS3D-transformed onto the screen plane
 const WEB_W = 1024;
@@ -112,24 +112,23 @@ function slabGeometry(w: number, d: number, t: number, r: number, bevel: number)
 
 /**
  * The base: ONE slab, with the thumb divot boolean-subtracted from the
- * top-front edge. The cutter is a rounded box whose rounded long edge barely
- * bites the lip — only the rounding ever touches the material, so the cut is
- * a smooth curved scoop with rounded ends.
+ * top-front edge. The cutter is a rounded box tilted 45° so one flat face
+ * chamfers the lip — a shallow angled facet with rounded ends that stays at
+ * the edge instead of reaching into the deck.
  */
 function baseGeometry() {
   const slab = slabGeometry(BASE_W, BASE_D, BASE_H, PLAN_R, 0.0014);
   const cutterSize = 0.04;
-  const half = cutterSize / 2;
-  const u = (SCOOP_R - SCOOP_BITE) / Math.SQRT2; // cutter-edge axis sits u up/out from the lip corner
   const cutter = new RoundedBoxGeometry(SCOOP_W, cutterSize, cutterSize, 5, SCOOP_R);
   const a = new Brush(slab);
   const b = new Brush(cutter);
-  // slab is centered on origin: lip corner = (y BASE_H/2, z BASE_D/2)
-  b.position.set(
-    0,
-    BASE_H / 2 + u + (half - SCOOP_R),
-    BASE_D / 2 + u - (half - SCOOP_R)
-  );
+  // the box is tilted 45° so one flat face slopes across the lip corner,
+  // sunk SCOOP_BITE perpendicular to that face — the divot hugs the edge
+  // (reach along deck and down the front face = SCOOP_BITE·√2 each) instead
+  // of shelving flat into the deck toward the trackpad
+  const d = cutterSize / 2 - SCOOP_BITE;
+  b.rotation.x = Math.PI / 4;
+  b.position.set(0, BASE_H / 2 + d / Math.SQRT2, BASE_D / 2 + d / Math.SQRT2);
   b.updateMatrixWorld();
   // keep the cut faces as material group 1, so the concave scoop can be shaded
   // darker than the slab — a recess must read shadowed, not specular
@@ -302,9 +301,9 @@ export function Macbook({
     const aluLid = alu.clone();
     aluLid.color = new THREE.Color("#c4c8ce");
     const aluScoop = alu.clone();
-    aluScoop.color = new THREE.Color("#9a9ea5");
-    aluScoop.roughness = 0.72;
-    aluScoop.envMapIntensity = 0.35;
+    aluScoop.color = new THREE.Color("#6d7177");
+    aluScoop.roughness = 0.85;
+    aluScoop.envMapIntensity = 0.15;
     const trackpad = new THREE.MeshStandardMaterial({
       color: "#c8ccd2",
       roughness: 0.32,
