@@ -22,13 +22,18 @@ Provenance: paradigm ported from `~/Documents/Kova/Websites/operator-terminal-3d
   rounded-rect `THREE.Shape` — RoundedBoxGeometry caps radius at half the smallest
   dimension (useless for thin slabs). `slabGeometry()` handles the rotate/translate
   (shape Y mirrors to −Z; front edge = shape y = −d/2).
-- **The scoop must NOT cut the full base height** — that bends the whole silhouette
-  into a wave. Two stacked slabs, notch only in the top one; the seam doubles as the
-  real machine's parting line.
+- **The front divot is a CSG subtraction** (`three-bvh-csg@0.0.17` — 0.0.18 needs
+  three>=0.179): a rounded box whose rounded edge barely bites the top-front lip of
+  the SINGLE base slab. Radu-rejected alternatives: full-height shape notch (bends
+  the silhouette into a wave), two stacked slabs (reads as two horizontal planes).
+  The cut faces are material group 1 — shade them darker/rougher (`aluScoop`) or the
+  concavity catches the key light and reads as a convex chrome pill.
 - **Key legends**: InstancedMesh shares UVs → legends are ONE canvas texture on a
   transparent plane floating 0.0003 above the caps, positions computed from the same
   `computeKeys()` data as the instances.
 - Screen plane roughness 0.45 — glossier leaves a flashlight-like specular dot from
   the key light mid-screen.
+- Hinge is LOW (0.45·BASE_H) and at the very back — the lid must tuck behind the
+  deck edge, not perch on top of it. Keys sink into the deck (tops +0.0012 over it).
 - Verify by LOOK: `node scripts/shot.mjs <url> <out.png>` (chromium via
   ~/pw-test/node_modules/playwright-core — avoids the Firefox-already-open MCP trap).

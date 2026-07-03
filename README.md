@@ -30,19 +30,26 @@ node scripts/shot.mjs "http://localhost:5183/#mac" /tmp/mb.png
 
 ## What makes it read as a MacBook (deliberate cues)
 
-- **No Apple logo** anywhere.
-- **Front thumb scoop** — real geometry: the base is TWO stacked extruded slabs
-  (bottom case + top case, like the real parting line); the crescent notch is
-  carved only into the top slab's front edge, so the bottom silhouette stays a
-  straight line. Carving it through the full height reads as a bent slab — tried,
-  rejected.
+- **No Apple logo** anywhere, and no model-name print — clean bezel.
+- **Front thumb divot** — the base is ONE slab (a single plane, like the real
+  machine); a rounded box is CSG-subtracted (`three-bvh-csg`) from the top-front
+  edge so only its rounded edge nicks the lip. The cut faces stay a separate
+  material group shaded darker/rougher — a concave recess must read shadowed,
+  or it looks like a chrome pill glued on (tried, rejected — as was an earlier
+  two-stacked-slabs approach, which read as two horizontal planes).
 - **Sleek thin slabs** — large plan-view corner radii via `ExtrudeGeometry`
   (RoundedBoxGeometry can't do plan radius > half the slab height), small bevels,
   no hard edges.
-- **All-screen lid** — edge-to-edge glass slab, hairline uniform bezel,
-  "MacBook Air" print on the chin.
-- **Camera notch** top-center, a mesh floating just in front of the screen plane
-  so it occludes both the CanvasTexture and the iframe (`occlude="blending"`).
+- **All-screen lid** — edge-to-edge glass slab; content runs to a hairline black
+  border (~4mm top/sides, slightly larger chin).
+- **Screen tucks behind the deck** — the hinge sits low and at the very back, so
+  the open lid emerges from behind the base almost level with it, not perched on
+  top of the deck.
+- **Camera notch** top-center, same glossy glass as the panel (it reflects like
+  the screen), floating a hair in front of the screen plane so it occludes both
+  the CanvasTexture and the iframe (`occlude="blending"`); the camera dot is a
+  separate darker element inside it.
+- **Keys sit sunken into the deck**, tops barely proud of the aluminum.
 - **Huge trackpad** flush with the deck, hairline seam plate beneath it.
 - Mac ANSI keyboard: half-height function row, inverted-T half-height arrows,
   stacked shift-symbol legends, words on modifiers. Legends are one canvas

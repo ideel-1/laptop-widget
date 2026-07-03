@@ -2,6 +2,7 @@ import { useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { Html } from "@react-three/drei";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+import { Brush, Evaluator, SUBTRACTION } from "three-bvh-csg";
 
 /**
  * PROCEDURAL MACBOOK — code-built, no model files.
@@ -35,25 +36,26 @@ const LID_T = 0.0062;
 const LID_ANGLE = -(Math.PI / 2 + 0.17); // open ~100°
 
 const FOOT_H = 0.0012;
-const HINGE_Z = -BASE_D / 2 + 0.007;
-const HINGE_Y = FOOT_H + BASE_H + 0.0006;
+// hinge sits low and at the very back: the lid tucks BEHIND the deck edge,
+// emerging level with the base rather than perched on top of it
+const HINGE_Z = -BASE_D / 2 + 0.0035;
+const HINGE_Y = FOOT_H + BASE_H * 0.45;
 
-// front thumb scoop — carved only into the TOP half of the base, so the
-// bottom silhouette stays a straight line (that's how the real one reads)
-const SCOOP_HALF_W = 0.05;
-const SCOOP_DEPTH = 0.0045;
-const BASE_TOP_H = BASE_H * 0.5;
-const BASE_BOT_H = BASE_H - BASE_TOP_H;
+// front thumb divot — a rounded box CSG-subtracted from the top-front edge of
+// the ONE base slab (the base is a single plane; only its lip is nicked)
+const SCOOP_W = 0.105; // divot length along the edge
+const SCOOP_R = 0.014; // rounding of the cutter = curvature of the divot
+const SCOOP_BITE = 0.004; // how deep the rounded edge sinks in, diagonally
 
-// screen
-const SCREEN_W = 0.474;
-const SCREEN_H = 0.308;
+// screen — hairline black border: 4mm-ish top/sides, slightly larger chin
 const GLASS_W = 0.488;
 const GLASS_L = 0.334;
-const SCREEN_Z = LID_L / 2; // center of glass + screen on the lid
+const SCREEN_W = GLASS_W - 2 * 0.004;
+const SCREEN_H = GLASS_L - 0.004 - 0.009;
+const SCREEN_Z = LID_L / 2; // center of the glass on the lid
+const SCREEN_CZ = SCREEN_Z + (0.009 - 0.004) / 2; // content shifted up: chin > top
 const NOTCH_W = 0.052;
 const NOTCH_D = 0.0078;
-const BEZEL_TEXT = "MacBook Air";
 
 // keyboard
 const U = 0.0295; // key pitch
@@ -108,48 +110,30 @@ function slabGeometry(w: number, d: number, t: number, r: number, bevel: number)
   return geom;
 }
 
-/** One base slab; `notch` carves the thumb scoop into the front edge (+Z). */
-function baseSlabGeometry(t: number, notch: boolean) {
-  const w = BASE_W;
-  const d = BASE_D;
-  const r = PLAN_R;
-  const x = -w / 2;
-  // shape-space: front edge (world +Z) is y = -d/2 (rotateX(-PI/2) mirrors Y→-Z)
-  const y = -d / 2;
-
-  const shape = new THREE.Shape();
-  shape.moveTo(x + r, y);
-  if (notch) {
-    const nw = SCOOP_HALF_W;
-    const nd = SCOOP_DEPTH;
-    const Rs = (nw * nw + nd * nd) / (2 * nd); // arc through (±nw, y) dipping to (0, y+nd)
-    const yc = y + nd - Rs;
-    const a0 = Math.atan2(y - yc, -nw);
-    const a1 = Math.atan2(y - yc, nw);
-    shape.lineTo(-nw, y);
-    shape.absarc(0, yc, Rs, a0, a1, true); // the scoop
-  }
-  shape.lineTo(w / 2 - r, y);
-  shape.quadraticCurveTo(w / 2, y, w / 2, y + r);
-  shape.lineTo(w / 2, y + d - r);
-  shape.quadraticCurveTo(w / 2, y + d, w / 2 - r, y + d);
-  shape.lineTo(x + r, y + d);
-  shape.quadraticCurveTo(x, y + d, x, y + d - r);
-  shape.lineTo(x, y + r);
-  shape.quadraticCurveTo(x, y, x + r, y);
-
-  const bevel = 0.0014;
-  const geom = new THREE.ExtrudeGeometry(shape, {
-    depth: t - 2 * bevel,
-    bevelEnabled: true,
-    bevelThickness: bevel,
-    bevelSize: bevel,
-    bevelSegments: 3,
-    curveSegments: 32,
-  });
-  geom.rotateX(-Math.PI / 2);
-  geom.translate(0, -(t / 2 - bevel), 0);
-  return geom;
+/**
+ * The base: ONE slab, with the thumb divot boolean-subtracted from the
+ * top-front edge. The cutter is a rounded box whose rounded long edge barely
+ * bites the lip — only the rounding ever touches the material, so the cut is
+ * a smooth curved scoop with rounded ends.
+ */
+function baseGeometry() {
+  const slab = slabGeometry(BASE_W, BASE_D, BASE_H, PLAN_R, 0.0014);
+  const cutterSize = 0.04;
+  const half = cutterSize / 2;
+  const u = (SCOOP_R - SCOOP_BITE) / Math.SQRT2; // cutter-edge axis sits u up/out from the lip corner
+  const cutter = new RoundedBoxGeometry(SCOOP_W, cutterSize, cutterSize, 5, SCOOP_R);
+  const a = new Brush(slab);
+  const b = new Brush(cutter);
+  // slab is centered on origin: lip corner = (y BASE_H/2, z BASE_D/2)
+  b.position.set(
+    0,
+    BASE_H / 2 + u + (half - SCOOP_R),
+    BASE_D / 2 + u - (half - SCOOP_R)
+  );
+  b.updateMatrixWorld();
+  // keep the cut faces as material group 1, so the concave scoop can be shaded
+  // darker than the slab — a recess must read shadowed, not specular
+  return new Evaluator().evaluate(a, b, SUBTRACTION).geometry;
 }
 
 // ---------------- key layout ----------------
@@ -276,24 +260,6 @@ function buildLegendTexture(keys: KeyInfo[]) {
   return tex;
 }
 
-// "MacBook Air" print on the bottom bezel
-function buildBezelTexture() {
-  const c = document.createElement("canvas");
-  c.width = 1024;
-  c.height = 96;
-  const g = c.getContext("2d")!;
-  g.clearRect(0, 0, 1024, 96);
-  g.fillStyle = "rgba(190,193,198,0.85)";
-  g.font = `500 44px "Helvetica Neue", Arial, sans-serif`;
-  g.textAlign = "center";
-  g.textBaseline = "middle";
-  g.fillText(BEZEL_TEXT, 512, 50);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
-  return tex;
-}
-
 // fine sandblasted-anodized grain, shared as roughness+bump map
 function buildNoiseTexture() {
   const c = document.createElement("canvas");
@@ -321,7 +287,6 @@ export function Macbook({
 }) {
   const keys = useMemo(computeKeys, []);
   const legendTex = useMemo(() => buildLegendTexture(keys), [keys]);
-  const bezelTex = useMemo(buildBezelTexture, []);
   const noiseTex = useMemo(buildNoiseTexture, []);
 
   const mats = useMemo(() => {
@@ -336,6 +301,10 @@ export function Macbook({
     });
     const aluLid = alu.clone();
     aluLid.color = new THREE.Color("#c4c8ce");
+    const aluScoop = alu.clone();
+    aluScoop.color = new THREE.Color("#a7abb2");
+    aluScoop.roughness = 0.6;
+    aluScoop.envMapIntensity = 0.55;
     const trackpad = new THREE.MeshStandardMaterial({
       color: "#c8ccd2",
       roughness: 0.32,
@@ -363,11 +332,6 @@ export function Macbook({
       metalness: 0.3,
       envMapIntensity: 1.2,
     });
-    const notch = new THREE.MeshStandardMaterial({
-      color: "#050506",
-      roughness: 0.35,
-      metalness: 0,
-    });
     const dark = new THREE.MeshStandardMaterial({
       color: "#101113",
       roughness: 0.6,
@@ -378,13 +342,12 @@ export function Macbook({
       roughness: 0.85,
       metalness: 0,
     });
-    return { alu, aluLid, trackpad, tpLine, key, well, glass, notch, dark, foot };
+    return { alu, aluLid, aluScoop, trackpad, tpLine, key, well, glass, dark, foot };
   }, [noiseTex]);
 
   const geoms = useMemo(
     () => ({
-      baseBot: baseSlabGeometry(BASE_BOT_H, false),
-      baseTop: baseSlabGeometry(BASE_TOP_H, true),
+      base: baseGeometry(),
       lid: slabGeometry(LID_W, LID_L, LID_T, PLAN_R, 0.0015),
       glass: slabGeometry(GLASS_W, GLASS_L, 0.0016, 0.01, 0.0004),
       wellPlate: slabGeometry(FIELD_W + 0.007, FIELD_D + 0.006, 0.0008, 0.0035, 0.0002),
@@ -404,7 +367,8 @@ export function Macbook({
     const s = new THREE.Vector3();
     const deckTop = FOOT_H + BASE_H;
     keys.forEach((key, i) => {
-      p.set(key.x, deckTop + 0.0006 + KEY_H / 2, key.z);
+      // caps sit sunken into the deck — tops barely proud of the aluminum
+      p.set(key.x, deckTop + 0.0012 - KEY_H / 2, key.z);
       s.set(key.w / (U - GAP), 1, key.d / (U - GAP));
       m.compose(p, q, s);
       keysRef.current.setMatrixAt(i, m);
@@ -416,18 +380,12 @@ export function Macbook({
 
   return (
     <group>
-      {/* ---------------- base: bottom case + notched top case ---------------- */}
+      {/* ---------------- base: one slab, divot subtracted ----------------
+          group 0 = slab faces, group 1 = the scoop's concave cut surface */}
       <mesh
-        position={[0, FOOT_H + BASE_BOT_H / 2, 0]}
-        geometry={geoms.baseBot}
-        material={mats.alu}
-        castShadow
-        receiveShadow
-      />
-      <mesh
-        position={[0, FOOT_H + BASE_BOT_H + BASE_TOP_H / 2, 0]}
-        geometry={geoms.baseTop}
-        material={mats.alu}
+        position={[0, FOOT_H + BASE_H / 2, 0]}
+        geometry={geoms.base}
+        material={[mats.alu, mats.aluScoop]}
         castShadow
         receiveShadow
       />
@@ -461,7 +419,7 @@ export function Macbook({
 
       {/* legends */}
       <mesh
-        position={[0, deckTop + 0.0006 + KEY_H + 0.0003, KB_CENTER_Z]}
+        position={[0, deckTop + 0.0012 + 0.0003, KB_CENTER_Z]}
         rotation={[-Math.PI / 2, 0, 0]}
       >
         <planeGeometry args={[FIELD_W, FIELD_D]} />
@@ -529,7 +487,7 @@ export function Macbook({
         {screenUrl ? (
           <>
             {/* dead glass behind the live page */}
-            <mesh position={[0, -(LID_T / 2 + 0.0018), SCREEN_Z]} rotation={[Math.PI / 2, 0, 0]}>
+            <mesh position={[0, -(LID_T / 2 + 0.0018), SCREEN_CZ]} rotation={[Math.PI / 2, 0, 0]}>
               <planeGeometry args={[SCREEN_W, SCREEN_H]} />
               <meshStandardMaterial color="#0a0d10" roughness={0.4} metalness={0} />
             </mesh>
@@ -537,7 +495,7 @@ export function Macbook({
               transform
               occlude="blending"
               distanceFactor={400}
-              position={[0, -(LID_T / 2 + 0.0022), SCREEN_Z]}
+              position={[0, -(LID_T / 2 + 0.0022), SCREEN_CZ]}
               rotation={[Math.PI / 2, 0, 0]}
               scale={SCREEN_W / WEB_W}
               zIndexRange={[5, 0]}
@@ -557,7 +515,7 @@ export function Macbook({
             </Html>
           </>
         ) : (
-          <mesh position={[0, -(LID_T / 2 + 0.0018), SCREEN_Z]} rotation={[Math.PI / 2, 0, 0]}>
+          <mesh position={[0, -(LID_T / 2 + 0.0018), SCREEN_CZ]} rotation={[Math.PI / 2, 0, 0]}>
             <planeGeometry args={[SCREEN_W, SCREEN_H]} />
             <meshStandardMaterial
               map={screenTexture}
@@ -571,27 +529,20 @@ export function Macbook({
           </mesh>
         )}
 
-        {/* camera notch, hanging from the top bezel over the screen */}
+        {/* camera notch — same glass as the panel, embedded in the screen
+            surface (it reflects like the screen does); floats a hair in front
+            so it occludes both the texture and the live iframe */}
         <mesh
-          position={[0, -(LID_T / 2 + 0.0026), SCREEN_Z + SCREEN_H / 2 - NOTCH_D / 2 + 0.0004]}
+          position={[0, -(LID_T / 2 + 0.0022), SCREEN_CZ + SCREEN_H / 2 - NOTCH_D / 2 + 0.0004]}
           geometry={geoms.notch}
-          material={mats.notch}
+          material={mats.glass}
         />
-        {/* the camera dot itself */}
+        {/* the camera dot itself, apart from the glass */}
         <mesh
-          position={[0, -(LID_T / 2 + 0.0032), SCREEN_Z + SCREEN_H / 2 - NOTCH_D / 2 + 0.0004]}
+          position={[0, -(LID_T / 2 + 0.0028), SCREEN_CZ + SCREEN_H / 2 - NOTCH_D / 2 + 0.0004]}
         >
           <cylinderGeometry args={[0.0016, 0.0016, 0.0002, 16]} />
-          <meshStandardMaterial color="#0d1117" roughness={0.2} metalness={0.4} />
-        </mesh>
-
-        {/* bottom-bezel print */}
-        <mesh
-          position={[0, -(LID_T / 2 + 0.0018), SCREEN_Z - SCREEN_H / 2 - 0.0062]}
-          rotation={[Math.PI / 2, 0, 0]}
-        >
-          <planeGeometry args={[0.096, 0.009]} />
-          <meshStandardMaterial map={bezelTex} transparent alphaTest={0.05} roughness={1} />
+          <meshStandardMaterial color="#101722" roughness={0.15} metalness={0.5} />
         </mesh>
 
         {/* spill light: screen glow onto the deck */}
