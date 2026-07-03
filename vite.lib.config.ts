@@ -11,7 +11,7 @@ export default defineConfig({
   ],
   build: {
     lib: {
-      entry: { index: "src/lib/index.ts" },
+      entry: { index: "src/lib/index.ts", editor: "src/lib/editor.ts" },
       formats: ["es"],
     },
     rollupOptions: {

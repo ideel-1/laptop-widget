@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Canvas } from "@react-three/fiber";
 import {
   OrbitControls,
@@ -25,6 +25,8 @@ export type LaptopCanvasProps = LaptopProps & {
   background?: string;
   style?: CSSProperties;
   className?: string;
+  /** extra scene objects, rendered inside the canvas */
+  children?: ReactNode;
 };
 
 // ?cam=x,y,z overrides the start camera (handy for screenshots / embeds)
@@ -45,6 +47,7 @@ export function LaptopCanvas({
   background = "#0c0d0f",
   style,
   className,
+  children,
   ...laptop
 }: LaptopCanvasProps) {
   const transparent = background === "transparent";
@@ -77,10 +80,14 @@ export function LaptopCanvas({
         <Lightformer intensity={2.6} position={[0, 4, 3]} scale={[8, 3, 1]} />
         <Lightformer intensity={0.9} position={[-4, 1.5, 1]} scale={[3, 4, 1]} color="#bcd0e8" />
         <Lightformer intensity={0.9} position={[4, 1.5, 1]} scale={[3, 4, 1]} color="#e8dcc8" />
-        <Lightformer intensity={0.5} position={[0, 1, -4]} scale={[6, 2, 1]} />
+        {/* strong enough that the lid back shows its color — the whole scene
+            behind the hinge otherwise reads black regardless of `color` */}
+        <Lightformer intensity={1.4} position={[0, 1.5, -4]} scale={[6, 3, 1]} />
       </Environment>
 
       <Laptop {...laptop} />
+
+      {children}
 
       <ContactShadows
         position={[0, -0.001, 0]}

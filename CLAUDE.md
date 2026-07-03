@@ -1,20 +1,40 @@
-# macbook-3d
+# laptop-widget (repo dir: macbook-3d)
 
 Vite + React 18 + TS + three/@react-three/fiber/drei. Procedural MacBook (no model
-files) with a live-iframe screen. Port **5183**. Read `README.md` first — it carries
-the design cues, routes (`#mac`/`#web`), URL params (`?embed`, `?cam=x,y,z`) and caveats.
+files) with a live-iframe screen, published as the **`laptop-widget` npm package**
+(remote `github-personal:ideel-1/laptop-widget`). Port **5183**. Read `README.md`
+first — it carries install/props/editor docs, the design cues, demo routes
+(`#mac`/`#web`/`#custom`/`#editor`), URL params (`?embed`, `?cam=x,y,z`) and caveats.
 
 Provenance: paradigm ported from `~/Documents/Kova/Websites/operator-terminal-3d`
-(rugged terminal, `/#web`). End goal: bottom-of-portfolio section before the footer.
+(rugged terminal, `/#web`). End goal: bottom-of-portfolio section before the footer,
+importable on any site.
 
 ## Architecture
 
-- `src/Scene.tsx` — shared shell: camera/orbit, Lightformer env, reflective floor,
-  contact shadow, animated wallpaper CanvasTexture. Machine-agnostic.
-- `src/Macbook.tsx` — the machine. All dimensions are consts up top
-  (scale: 1 unit ≈ 608 mm; machine 0.5 wide, sits on y=0).
-- Screen contract: `Macbook({ screenTexture, screenUrl? })` — texture plane by
-  default, `<Html transform occlude="blending">` iframe when `screenUrl` is set.
+- `src/lib/` — the published package. `Laptop.tsx` = the machine (dimensions are
+  consts up top; scale: 1 unit ≈ 608 mm; machine 0.5 wide, sits on y=0) + color
+  derivation + sticker Decals + in-screen URL bar. `LaptopCanvas.tsx` = the
+  batteries-included stage (camera/orbit, Lightformer env, reflective floor,
+  contact shadow). `embed.ts` = `laptop_embed` recursion depth (0 bar+live,
+  1 live no bar, 2 static wallpaper). `editor/` → `laptop-widget/editor` entry.
+- `src/demo/` — the dev/demo site (routes above).
+- Builds: `npm run build:lib` → `dist/` (package, vite.lib.config.ts);
+  `npm run build` → `site/` (demo). NEVER let both write the same dir.
+
+## Library gotchas
+
+- **Sticker decals**: chirality can't be fixed by the Decal euler (projection is
+  line-symmetric — any yaw ≡ an in-plane spin, we proved it by screenshot);
+  the pixels themselves are mirrored via canvas in `StickerDecal`.
+- **The live screen's `<Html>` iframe floats over the canvas DOM** and swallows
+  pointer events even when the screen faces away — the editor renders
+  `screenUrl={null}` so the lid stays draggable.
+- Editor drag plane needs `side: DoubleSide` or the raycaster backface-culls it
+  from the behind-the-lid camera.
+- Lid back reads dark for every color at low camera angles (metal reflects the
+  dark floor); the editor compensates with a behind-camera directionalLight
+  (metal specular is tinted by base color) + a raised default camera.
 
 ## Hard-won gotchas
 

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { LaptopCanvas, laptopEmbedDepth } from "../lib";
+import { LaptopEditor } from "../lib/editor";
 
-type Route = "mac" | "web" | "custom";
+type Route = "mac" | "web" | "custom" | "editor";
 
 // built-in demo sticker — a little round badge, no asset files needed
 const BADGE =
@@ -44,6 +45,7 @@ export default function App() {
           <a href="#mac" className={route === "mac" ? "active" : ""}>Mac</a>
           <a href="#web" className={route === "web" ? "active" : ""}>Web</a>
           <a href="#custom" className={route === "custom" ? "active" : ""}>Custom</a>
+          <a href="#editor" className={route === "editor" ? "active" : ""}>Editor</a>
           <span className="label">procedural macbook · code-built, no model files</span>
         </nav>
       )}
@@ -52,6 +54,17 @@ export default function App() {
           page, so the laptop shows the laptop (recursion capped at depth 2) */}
       {route === "mac" && <LaptopCanvas screenUrl={null} />}
       {route === "web" && <LaptopCanvas />}
+      {route === "editor" && (
+        <LaptopEditor
+          initial={{
+            color: "#c8ccd2",
+            screenUrl: "self",
+            stickers: [
+              { image: BADGE, x: -0.06, y: 0.2, rotation: -0.35, scale: 0.07 },
+            ],
+          }}
+        />
+      )}
       {/* color + stickers showcase, shot from behind the lid */}
       {route === "custom" && (
         <LaptopCanvas
