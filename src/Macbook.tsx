@@ -38,14 +38,14 @@ const LID_ANGLE = -(Math.PI / 2 + 0.17); // open ~100°
 const FOOT_H = 0.0012;
 // hinge sits low and at the very back: the lid tucks BEHIND the deck edge,
 // emerging level with the base rather than perched on top of it
-const HINGE_Z = -BASE_D / 2 + 0.0035;
+const HINGE_Z = -BASE_D / 2 - 0.002;
 const HINGE_Y = FOOT_H + BASE_H * 0.45;
 
 // front thumb divot — a rounded box CSG-subtracted from the top-front edge of
 // the ONE base slab (the base is a single plane; only its lip is nicked)
-const SCOOP_W = 0.105; // divot length along the edge
-const SCOOP_R = 0.014; // rounding of the cutter = curvature of the divot
-const SCOOP_BITE = 0.004; // how deep the rounded edge sinks in, diagonally
+const SCOOP_W = 0.028; // divot length along the edge
+const SCOOP_R = 0.005; // rounding of the cutter = curvature of the divot
+const SCOOP_BITE = 0.0015; // how deep the rounded edge sinks in, diagonally
 
 // screen — hairline black border: 4mm-ish top/sides, slightly larger chin
 const GLASS_W = 0.488;
@@ -302,9 +302,9 @@ export function Macbook({
     const aluLid = alu.clone();
     aluLid.color = new THREE.Color("#c4c8ce");
     const aluScoop = alu.clone();
-    aluScoop.color = new THREE.Color("#a7abb2");
-    aluScoop.roughness = 0.6;
-    aluScoop.envMapIntensity = 0.55;
+    aluScoop.color = new THREE.Color("#9a9ea5");
+    aluScoop.roughness = 0.72;
+    aluScoop.envMapIntensity = 0.35;
     const trackpad = new THREE.MeshStandardMaterial({
       color: "#c8ccd2",
       roughness: 0.32,
