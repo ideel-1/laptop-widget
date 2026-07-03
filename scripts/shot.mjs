@@ -1,0 +1,12 @@
+import pkg from '/Users/radu/pw-test/node_modules/playwright-core/index.js';
+const { chromium } = pkg;
+const url = process.argv[2];
+const out = process.argv[3];
+const browser = await chromium.launch({ args: ['--ignore-gpu-blocklist', '--enable-webgl'] });
+const page = await browser.newPage({ viewport: { width: 1500, height: 900 }, deviceScaleFactor: 2 });
+page.on('pageerror', (e) => console.log('[pageerror]', e.message));
+await page.goto(url, { waitUntil: 'networkidle' });
+await page.waitForTimeout(3000);
+await page.screenshot({ path: out });
+await browser.close();
+console.log('saved', out);
